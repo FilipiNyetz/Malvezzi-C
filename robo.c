@@ -70,20 +70,6 @@ void liberarLog(Log *log)
     log->sz = 0;
 }
 
-// Retorna 1 se as últimas ações forem todas movimentos horizontais (oscilação)
-int estaOscilando(const Log *log)
-{
-    int verificar = log->sz < 4 ? log->sz : 4;
-    if (verificar < 2) return 0;
-    for (int i = log->sz - verificar; i < log->sz; i++)
-    {
-        int idx = (log->ini + i) % log->cap;
-        if (log->v[idx] != MOVER_L && log->v[idx] != MOVER_O)
-            return 0;
-    }
-    return 1;
-}
-
 // Etapa 1 — Definir dificuldade com base nas linhas do mapa
 const char *definirDificuldade(int linhasMapa)
 {
@@ -112,7 +98,7 @@ int estaLivre(char mapa[][100], int r, int c, int linhasMapa, int colunasMapa)
 }
 
 // Etapa 3, 4 e 5 — Lógica do agente reflexo
-Acao decidirAcao(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo, const Log *log)
+Acao decidirAcao(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo)
 {
     // Etapa 5: Limpar sujeira atual (prioridade máxima)
     if (mapa[robo.r][robo.c] == '*')
@@ -139,41 +125,31 @@ Acao decidirAcao(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo, 
         }
     }
 
-    // Antioscilação: se preso em ping-pong horizontal, forçar mudança de linha
-    if (estaOscilando(log))
-    {
-        printf("Antioscilacao: forcando mudanca de linha\n");
-        if (estaLivre(mapa, robo.r - 1, robo.c, linhasMapa, colunasMapa))
-            return MOVER_N;
-        if (estaLivre(mapa, robo.r + 1, robo.c, linhasMapa, colunasMapa))
-            return MOVER_S;
-    }
+    // Etapa 3 + 4: Zig-zag por colunas
+    Acao direcaoPrincipal = (robo.c % 2 == 0) ? MOVER_S : MOVER_N;
+    Acao direcaoOposta    = (robo.c % 2 == 0) ? MOVER_N : MOVER_S;
+    printf("Regra 3 (zig-zag): coluna %s\n", robo.c % 2 == 0 ? "par" : "impar");
 
-    // Etapa 3 + 4: Zig-zag com desvio de obstáculos
-    Acao direcaoPrincipal = (robo.r % 2 == 0) ? MOVER_L : MOVER_O;
-    Acao direcaoOposta    = (robo.r % 2 == 0) ? MOVER_O : MOVER_L;
-    printf("Regra 3 (zig-zag): linha %s\n", robo.r % 2 == 0 ? "par" : "impar");
-
-    // Tentar direção principal horizontal
-    int ncPrincipal = (direcaoPrincipal == MOVER_L) ? robo.c + 1 : robo.c - 1;
-    if (estaLivre(mapa, robo.r, ncPrincipal, linhasMapa, colunasMapa))
+    // Tentar direção principal vertical
+    int nrPrincipal = (direcaoPrincipal == MOVER_S) ? robo.r + 1 : robo.r - 1;
+    if (estaLivre(mapa, nrPrincipal, robo.c, linhasMapa, colunasMapa))
         return direcaoPrincipal;
 
-    // Etapa 4: Bloqueado — tentar sul
-    if (estaLivre(mapa, robo.r + 1, robo.c, linhasMapa, colunasMapa))
-        return MOVER_S;
+    // Etapa 4: Bloqueado — tentar leste
+    if (estaLivre(mapa, robo.r, robo.c + 1, linhasMapa, colunasMapa))
+        return MOVER_L;
 
-    // Etapa 4: Sul bloqueado — tentar direção oposta horizontal
-    int ncOposto = (direcaoOposta == MOVER_L) ? robo.c + 1 : robo.c - 1;
-    if (estaLivre(mapa, robo.r, ncOposto, linhasMapa, colunasMapa))
+    // Etapa 4: Leste bloqueado — tentar direção oposta vertical
+    int nrOposto = (direcaoOposta == MOVER_S) ? robo.r + 1 : robo.r - 1;
+    if (estaLivre(mapa, nrOposto, robo.c, linhasMapa, colunasMapa))
         return direcaoOposta;
 
-    // Fallback: tentar norte, sul ou ficar
-    printf("Fallback: tentando norte ou sul\n");
-    if (estaLivre(mapa, robo.r - 1, robo.c, linhasMapa, colunasMapa))
-        return MOVER_N;
-    if (estaLivre(mapa, robo.r + 1, robo.c, linhasMapa, colunasMapa))
-        return MOVER_S;
+    // Fallback: tentar leste, oeste ou ficar
+    printf("Fallback: tentando leste ou oeste\n");
+    if (estaLivre(mapa, robo.r, robo.c + 1, linhasMapa, colunasMapa))
+        return MOVER_L;
+    if (estaLivre(mapa, robo.r, robo.c - 1, linhasMapa, colunasMapa))
+        return MOVER_O;
 
     return FICAR;
 }
@@ -240,7 +216,7 @@ int main()
     // Loop principal
     while (passosTotais < passosTotaisMax && sujeiraTotal > 0)
     {
-        Acao acao = decidirAcao(mapa, linhasMapa, colunasMapa, robo, &logAcoes);
+        Acao acao = decidirAcao(mapa, linhasMapa, colunasMapa, robo);
         registrarAcao(&logAcoes, acao);
 
         if (acao == LIMPAR)
