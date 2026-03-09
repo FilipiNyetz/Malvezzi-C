@@ -3,7 +3,6 @@
 #include <string.h>
 #include <time.h>
 
-// Etapa 2 — Declarações
 typedef struct
 {
     int r, c;
@@ -341,7 +340,6 @@ int main(void)
 
     clock_t inicio = clock();
 
-    // Laço de simulação
     while (passosTotais < passosTotaisMax && sujeiraTotal > 0)
     {
         printf("--- Passo %d ---\n", passosTotais + 1);
