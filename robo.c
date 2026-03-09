@@ -19,24 +19,23 @@ typedef enum
     FICAR
 } Acao;
 
-// Log circular de ações
 typedef struct
 {
     Acao *v;
-    int   cap, ini, sz;
+    int cap, ini, sz;
 } Log;
 
 Log iniciarLog(int capacidade)
 {
     Log log;
-    log.v   = (Acao *)malloc(capacidade * sizeof(Acao));
+    log.v = (Acao *)malloc(capacidade * sizeof(Acao));
     log.cap = capacidade;
     log.ini = 0;
-    log.sz  = 0;
+    log.sz = 0;
     return log;
 }
 
-void registrarAcao(Log *log, Acao acao)
+void exinirLog(Log *log, Acao acao)
 {
     int pos = (log->ini + log->sz) % log->cap;
     if (log->sz < log->cap)
@@ -46,7 +45,6 @@ void registrarAcao(Log *log, Acao acao)
     }
     else
     {
-        // Buffer cheio: sobrescreve o mais antigo
         log->v[log->ini] = acao;
         log->ini = (log->ini + 1) % log->cap;
     }
@@ -66,11 +64,10 @@ void imprimirLog(const Log *log)
 void liberarLog(Log *log)
 {
     free(log->v);
-    log->v  = NULL;
+    log->v = NULL;
     log->sz = 0;
 }
 
-// Etapa 1 — Definir dificuldade com base nas linhas do mapa
 const char *definirDificuldade(int linhasMapa)
 {
     switch (linhasMapa)
@@ -86,75 +83,188 @@ const char *definirDificuldade(int linhasMapa)
     }
 }
 
-// Funções auxiliares
-int dentroDoMapa(int r, int c, int linhasMapa, int colunasMapa)
+int dentro(int r, int c, int linhasMapa, int colunasMapa)
 {
     return r >= 0 && r < linhasMapa && c >= 0 && c < colunasMapa;
 }
 
-int estaLivre(char mapa[][100], int r, int c, int linhasMapa, int colunasMapa)
+int eh_sujo(char mapa[][100], int r, int c)
 {
-    return dentroDoMapa(r, c, linhasMapa, colunasMapa) && mapa[r][c] != '#';
+    return mapa[r][c] == '*';
 }
 
-// Etapa 3, 4 e 5 — Lógica do agente reflexo
-Acao decidirAcao(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo)
+int eh_bloqueio(char mapa[][100], int r, int c, int linhasMapa, int colunasMapa)
 {
-    // Etapa 5: Limpar sujeira atual (prioridade máxima)
-    if (mapa[robo.r][robo.c] == '*')
+    return !dentro(r, c, linhasMapa, colunasMapa) || mapa[r][c] == '#';
+}
+
+// Apenas parede '#' conta como bloqueio
+int eh_parede(char mapa[][100], int r, int c, int linhasMapa, int colunasMapa)
+{
+    return dentro(r, c, linhasMapa, colunasMapa) && mapa[r][c] == '#';
+}
+
+const char *nome_acao(Acao a)
+{
+    switch (a)
     {
-        printf("Regra 1: limpar sujeira atual\n");
+    case LIMPAR:
+        return "LIMPAR";
+    case MOVER_N:
+        return "MOVER_N (norte)";
+    case MOVER_S:
+        return "MOVER_S (sul)";
+    case MOVER_L:
+        return "MOVER_L (leste)";
+    case MOVER_O:
+        return "MOVER_O (oeste)";
+    case FICAR:
+        return "FICAR";
+    default:
+        return "?";
+    }
+}
+
+Acao decide_reflex(char mapa[][100], int linhasMapa, int colunasMapa,
+                   Ponto robo, int *bloqueios)
+{
+    int r = robo.r, c = robo.c;
+
+    // Regra 1: célula atual suja
+    if (eh_sujo(mapa, r, c))
+    {
+        printf("  Motivo : Regra 1: celula atual suja em (%d,%d)\n", r, c);
         return LIMPAR;
     }
 
-    // Etapa 3: Procurar sujeira nos vizinhos (N, S, L, O)
-    int dr[4] = {-1, 1, 0, 0};
-    int dc[4] = {0, 0, 1, -1};
-
-    for (int i = 0; i < 4; i++)
+    // Regra 2: vizinho sujo (N, S, L, O)
+    if (dentro(r - 1, c, linhasMapa, colunasMapa) && eh_sujo(mapa, r - 1, c))
     {
-        int nr = robo.r + dr[i];
-        int nc = robo.c + dc[i];
-        if (dentroDoMapa(nr, nc, linhasMapa, colunasMapa) && mapa[nr][nc] == '*')
-        {
-            printf("Regra 2: sujeira vizinha encontrada\n");
-            if (i == 0) return MOVER_N;
-            if (i == 1) return MOVER_S;
-            if (i == 2) return MOVER_L;
-            if (i == 3) return MOVER_O;
-        }
+        printf("  Motivo : Regra 2: vizinho sujo ao norte (%d,%d)\n", r - 1, c);
+        return MOVER_N;
+    }
+    if (dentro(r + 1, c, linhasMapa, colunasMapa) && eh_sujo(mapa, r + 1, c))
+    {
+        printf("  Motivo : Regra 2: vizinho sujo ao sul (%d,%d)\n", r + 1, c);
+        return MOVER_S;
+    }
+    if (dentro(r, c + 1, linhasMapa, colunasMapa) && eh_sujo(mapa, r, c + 1))
+    {
+        printf("  Motivo : Regra 2: vizinho sujo ao leste (%d,%d)\n", r, c + 1);
+        return MOVER_L;
+    }
+    if (dentro(r, c - 1, linhasMapa, colunasMapa) && eh_sujo(mapa, r, c - 1))
+    {
+        printf("  Motivo : Regra 2: vizinho sujo ao oeste (%d,%d)\n", r, c - 1);
+        return MOVER_O;
     }
 
-    // Etapa 3 + 4: Zig-zag por colunas
-    Acao direcaoPrincipal = (robo.c % 2 == 0) ? MOVER_S : MOVER_N;
-    Acao direcaoOposta    = (robo.c % 2 == 0) ? MOVER_N : MOVER_S;
-    printf("Regra 3 (zig-zag): coluna %s\n", robo.c % 2 == 0 ? "par" : "impar");
+    // Regra 3: zig-zag por colunas
+    if (c % 2 == 0)
+    {
+        // Coluna par: desce, senão leste (→), senão sobe
+        if (!eh_bloqueio(mapa, r + 1, c, linhasMapa, colunasMapa))
+        {
+            printf("  Motivo : Regra 3 (zig-zag): coluna par -> sul\n");
+            return MOVER_S;
+        }
+        if (eh_parede(mapa, r + 1, c, linhasMapa, colunasMapa))
+            (*bloqueios)++;
+        printf("  Motivo : Regra 3: sul bloqueado, tentando leste\n");
+        if (!eh_bloqueio(mapa, r, c + 1, linhasMapa, colunasMapa))
+        {
+            printf("  Motivo : Regra 3 (zig-zag): coluna par bloqueada -> leste\n");
+            return MOVER_L;
+        }
+        if (eh_parede(mapa, r, c + 1, linhasMapa, colunasMapa))
+            (*bloqueios)++;
+        printf("  Motivo : Regra 3: leste bloqueado, tentando norte\n");
+        if (!eh_bloqueio(mapa, r - 1, c, linhasMapa, colunasMapa))
+        {
+            printf("  Motivo : Regra 3 (zig-zag): coluna par bloqueada -> norte\n");
+            return MOVER_N;
+        }
+        if (eh_parede(mapa, r - 1, c, linhasMapa, colunasMapa))
+            (*bloqueios)++;
+    }
+    else
+    {
+        // Coluna ímpar: sobe, caso não de para subir leste, senão desce
+        if (!eh_bloqueio(mapa, r - 1, c, linhasMapa, colunasMapa))
+        {
+            printf("  Motivo : Regra 3 (zig-zag): coluna impar -> norte\n");
+            return MOVER_N;
+        }
+        if (eh_parede(mapa, r - 1, c, linhasMapa, colunasMapa))
+            (*bloqueios)++;
+        printf("  Motivo : Regra 3: norte bloqueado, tentando leste\n");
+        if (!eh_bloqueio(mapa, r, c + 1, linhasMapa, colunasMapa))
+        {
+            printf("  Motivo : Regra 3 (zig-zag): coluna impar bloqueada -> leste\n");
+            return MOVER_L;
+        }
+        if (eh_parede(mapa, r, c + 1, linhasMapa, colunasMapa))
+            (*bloqueios)++;
+        printf("  Motivo : Regra 3: leste bloqueado, tentando sul\n");
+        if (!eh_bloqueio(mapa, r + 1, c, linhasMapa, colunasMapa))
+        {
+            printf("  Motivo : Regra 3 (zig-zag): coluna impar bloqueada -> sul\n");
+            return MOVER_S;
+        }
+        if (eh_parede(mapa, r + 1, c, linhasMapa, colunasMapa))
+            (*bloqueios)++;
+    }
 
-    // Tentar direção principal vertical
-    int nrPrincipal = (direcaoPrincipal == MOVER_S) ? robo.r + 1 : robo.r - 1;
-    if (estaLivre(mapa, nrPrincipal, robo.c, linhasMapa, colunasMapa))
-        return direcaoPrincipal;
-
-    // Etapa 4: Bloqueado — tentar leste
-    if (estaLivre(mapa, robo.r, robo.c + 1, linhasMapa, colunasMapa))
-        return MOVER_L;
-
-    // Etapa 4: Leste bloqueado — tentar direção oposta vertical
-    int nrOposto = (direcaoOposta == MOVER_S) ? robo.r + 1 : robo.r - 1;
-    if (estaLivre(mapa, nrOposto, robo.c, linhasMapa, colunasMapa))
-        return direcaoOposta;
-
-    // Fallback: tentar leste, oeste ou ficar
-    printf("Fallback: tentando leste ou oeste\n");
-    if (estaLivre(mapa, robo.r, robo.c + 1, linhasMapa, colunasMapa))
-        return MOVER_L;
-    if (estaLivre(mapa, robo.r, robo.c - 1, linhasMapa, colunasMapa))
-        return MOVER_O;
-
+    if (!eh_bloqueio(mapa, r - 1, c, linhasMapa, colunasMapa))
+    {
+        printf("  Motivo : Fallback: norte\n");
+        return MOVER_N;
+    }
+    if (eh_parede(mapa, r - 1, c, linhasMapa, colunasMapa))
+        (*bloqueios)++;
+    if (!eh_bloqueio(mapa, r + 1, c, linhasMapa, colunasMapa))
+    {
+        printf("  Motivo : Fallback: sul\n");
+        return MOVER_S;
+    }
+    if (eh_parede(mapa, r + 1, c, linhasMapa, colunasMapa))
+        (*bloqueios)++;
+    printf("  Motivo : Fallback: nenhuma direcao disponivel\n");
     return FICAR;
 }
 
-void imprimirMapa(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo)
+int aplicar_acao(char mapa[][100], int linhasMapa, int colunasMapa,
+                 Ponto *robo, Acao acao,
+                 int *sujeiraTotal, int *pontosLimpos)
+{
+    if (acao == LIMPAR)
+    {
+        mapa[robo->r][robo->c] = '.';
+        (*sujeiraTotal)--;
+        (*pontosLimpos)++;
+        return 1;
+    }
+    if (acao == FICAR)
+        return 1;
+
+    int nr = robo->r, nc = robo->c;
+    if (acao == MOVER_N)
+        nr--;
+    if (acao == MOVER_S)
+        nr++;
+    if (acao == MOVER_L)
+        nc++;
+    if (acao == MOVER_O)
+        nc--;
+
+    if (eh_bloqueio(mapa, nr, nc, linhasMapa, colunasMapa))
+        return 0;
+    robo->r = nr;
+    robo->c = nc;
+    return 1;
+}
+
+void imprimir_mapa(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo)
 {
     for (int i = 0; i < linhasMapa; i++)
     {
@@ -170,24 +280,28 @@ void imprimirMapa(char mapa[][100], int linhasMapa, int colunasMapa, Ponto robo)
     printf("\n");
 }
 
-int main()
+void espera_enter(void)
 {
-    // Etapa 1 — Leitura do mapa
+    printf("  [Aperte enter para continuar]");
+    fflush(stdout);
+    while (getchar() != '\n')
+        ;
+}
+
+int main(void)
+{
     int linhasMapa, colunasMapa, passosTotaisMax;
     fscanf(stdin, "%d %d %d", &linhasMapa, &colunasMapa, &passosTotaisMax);
 
     const char *dificuldadeMapa = definirDificuldade(linhasMapa);
-    printf("Dificuldade: %s\n", dificuldadeMapa);
 
-    // Etapa 2 — Construção do robô
     char mapa[100][100];
-    Ponto robo;
+    Ponto robo = {0, 0};
     int sujeiraTotal = 0;
 
     for (int i = 0; i < linhasMapa; i++)
     {
         fscanf(stdin, "%s", mapa[i]);
-        printf("Linha %d: %s\n", i, mapa[i]);
         for (int j = 0; j < colunasMapa; j++)
         {
             if (mapa[i][j] == 'S')
@@ -201,56 +315,51 @@ int main()
         }
     }
 
-    printf("Sujeira encontrada: %d\n", sujeiraTotal);
-    printf("Posicao do robo: %d %d\n", robo.r, robo.c);
+    freopen("/dev/tty", "r", stdin);
 
-    // Etapa 6 — Contadores
+    printf("Dificuldade: %s | Sujeira: %d | Passos max: %d\n",
+           dificuldadeMapa, sujeiraTotal, passosTotaisMax);
+    printf("Deseja modo passo-a-passo? (1=sim, 0=nao): ");
+    fflush(stdout);
+
+    int passoPasso = 0;
+    scanf("%d", &passoPasso);
+    while (getchar() != '\n')
+        ;
+
+    if (passoPasso)
+    {
+        printf("\nMapa inicial:\n");
+        imprimir_mapa(mapa, linhasMapa, colunasMapa, robo);
+        espera_enter();
+    }
+
     int passosTotais = 0;
     int pontosLimpos = 0;
-    int bloqueios    = 0;
-
+    int bloqueios = 0;
     Log logAcoes = iniciarLog(10);
 
     clock_t inicio = clock();
 
-    // Loop principal
+    // Laço de simulação
     while (passosTotais < passosTotaisMax && sujeiraTotal > 0)
     {
-        Acao acao = decidirAcao(mapa, linhasMapa, colunasMapa, robo);
-        registrarAcao(&logAcoes, acao);
+        printf("--- Passo %d ---\n", passosTotais + 1);
+        Acao acao = decide_reflex(mapa, linhasMapa, colunasMapa, robo, &bloqueios);
 
-        if (acao == LIMPAR)
-        {
-            mapa[robo.r][robo.c] = '.';
-            sujeiraTotal--;
-            pontosLimpos++;
-        }
-        else if (acao != FICAR)
-        {
-            int nr = robo.r;
-            int nc = robo.c;
-
-            if (acao == MOVER_N) nr--;
-            if (acao == MOVER_S) nr++;
-            if (acao == MOVER_L) nc++;
-            if (acao == MOVER_O) nc--;
-
-            // Etapa 4: incrementar bloqueios apenas quando o robô bate de fato
-            if (!dentroDoMapa(nr, nc, linhasMapa, colunasMapa) || mapa[nr][nc] == '#')
-            {
-                bloqueios++;
-            }
-            else
-            {
-                robo.r = nr;
-                robo.c = nc;
-            }
-        }
-
-        // Etapa 6: incrementar passos ao fim de cada ciclo
+        int efetiva = aplicar_acao(mapa, linhasMapa, colunasMapa, &robo,
+                                   acao, &sujeiraTotal, &pontosLimpos);
+        exinirLog(&logAcoes, acao);
         passosTotais++;
-        printf("Robo em (%d,%d)\n", robo.r, robo.c);
-        imprimirMapa(mapa, linhasMapa, colunasMapa, robo);
+
+        printf("  Acao   : %s\n", nome_acao(acao));
+        printf("  Status : %s\n", efetiva ? "ok" : "bloqueado");
+        printf("  Sujeira restante: %d | Limpezas: %d | Bloqueios: %d\n",
+               sujeiraTotal, pontosLimpos, bloqueios);
+        imprimir_mapa(mapa, linhasMapa, colunasMapa, robo);
+
+        if (passoPasso)
+            espera_enter();
     }
 
     clock_t fim = clock();
@@ -259,13 +368,13 @@ int main()
     imprimirLog(&logAcoes);
     liberarLog(&logAcoes);
 
-    printf("RESULTADO:\n");
-    printf("dificuldade: %s\n", dificuldadeMapa);
-    printf("passosTotais: %d\n", passosTotais);
-    printf("pontosLimpos: %d\n", pontosLimpos);
-    printf("bloqueios: %d\n", bloqueios);
-    printf("sujeiraTotal: %d\n", sujeiraTotal);
-    printf("tempo: %f seg\n", tempo);
+    printf("\nRESULTADO:\n");
+    printf("dificuldade  : %s\n", dificuldadeMapa);
+    printf("passosTotais : %d\n", passosTotais);
+    printf("pontosLimpos : %d\n", pontosLimpos);
+    printf("bloqueios    : %d\n", bloqueios);
+    printf("sujeiraTotal : %d\n", sujeiraTotal);
+    printf("tempo        : %f seg\n", tempo);
 
     return 0;
 }
